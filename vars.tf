@@ -572,7 +572,7 @@ variable "internetmonitor" {
     resources                     = optional(set(string))
     status                        = optional(string)
     tags                          = optional(map(string))
-    traffic_percentage_to_monitor = 0
+    traffic_percentage_to_monitor = optional(number)
     health_events_config = optional(list(object({
       availability_score_threshold = optional(number)
       performance_score_threshold  = optional(number)
