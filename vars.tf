@@ -233,6 +233,7 @@ variable "log_destination_policy" {
     access_policy    = string
     destination_name = string
   })))
+  default = []
 }
 
 variable "log_group" {
