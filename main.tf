@@ -154,8 +154,8 @@ resource "aws_resourcegroups_group" "this" {
 }
 
 resource "aws_applicationinsights_application" "this" {
-  count                  = length(var.applicationinsights) == "0" ? "0" : length(var.resourcegroups_group)
-  resource_group_name    = lookup(var.applicationinsights[count.index], "resource_group_name")
+  count                  = length(var.applicationinsights)
+  resource_group_name    = var.resource_group_name
   auto_config_enabled    = lookup(var.applicationinsights[count.index], "auto_config_enabled")
   auto_create            = lookup(var.applicationinsights[count.index], "auto_create")
   cwe_monitor_enabled    = lookup(var.applicationinsights[count.index], "cwe_monitor_enabled")
@@ -249,12 +249,12 @@ resource "aws_evidently_segment" "this" {
 ## Internet Monitor ##
 
 resource "aws_internetmonitor_monitor" "this" {
-  count = length(var.internetmonitor)
-  monitor_name                  = lookup(var.internetmonitor[count.index], "monitor_name")
-  max_city_networks_to_monitor  = lookup(var.internetmonitor[count.index], "max_city_networks_to_monitor")
-  resources                     = lookup(var.internetmonitor[count.index], "resources")
-  status                        = lookup(var.internetmonitor[count.index], "status")
-  tags                          = merge(
+  count                        = length(var.internetmonitor)
+  monitor_name                 = lookup(var.internetmonitor[count.index], "monitor_name")
+  max_city_networks_to_monitor = lookup(var.internetmonitor[count.index], "max_city_networks_to_monitor")
+  resources                    = lookup(var.internetmonitor[count.index], "resources")
+  status                       = lookup(var.internetmonitor[count.index], "status")
+  tags = merge(
     var.tags,
     data.aws_default_tags.this.tags,
     lookup(var.internetmonitor[count.index], "tags")
@@ -271,6 +271,15 @@ resource "aws_internetmonitor_monitor" "this" {
 }
 
 ## Logs ##
+
+resource "aws_cloudwatch_log_account_policy" "this" {
+  count              = length(var.log_account_policy)
+  policy_document    = jsonencode(lookup(var.log_account_policy[count.index], "policy_document"))
+  policy_type        = lookup(var.log_account_policy[count.index], "policy_type")
+  policy_name        = lookup(var.log_account_policy[count.index], "policy_name")
+  scope              = lookup(var.log_account_policy[count.index], "scope")
+  selection_criteria = lookup(var.log_account_policy[count.index], "selection_criteria")
+}
 
 resource "aws_cloudwatch_log_data_protection_policy" "this" {
   count           = length(var.log_data_protection_policy) == "0" ? "0" : length(var.log_group)
@@ -298,6 +307,7 @@ resource "aws_cloudwatch_log_group" "this" {
   skip_destroy      = lookup(var.log_group[count.index], "skip_destroy")
   retention_in_days = lookup(var.log_group[count.index], "retention_in_days")
   kms_key_id        = lookup(var.log_group[count.index], "kms_key_id")
+  log_group_class   = lookup(var.log_group[count.index], "log_group_class")
   tags = merge(
     var.tags,
     lookup(var.log_group[count.index], "tags"),
@@ -353,7 +363,80 @@ resource "aws_cloudwatch_query_definition" "this" {
 
 ## Network Monitor ##
 
+resource "aws_networkmonitor_monitor" "this" {
+  count              = length(var.networkmonitor_monitor)
+  monitor_name       = lookup(var.networkmonitor_monitor[count.index], "monitor_name")
+  aggregation_period = lookup(var.networkmonitor_monitor[count.index], "aggregation_period")
+  tags = merge(
+    var.tags,
+    data.aws_default_tags.this.tags,
+    lookup(var.networkmonitor_monitor[count.index], "tags")
+  )
+}
+
+resource "aws_networkmonitor_probe" "this" {
+  count            = length(var.networkmonitor_monitor) == 0 ? 0 : length(var.networkmonitor_probe)
+  destination      = lookup(var.networkmonitor_probe[count.index], "destination")
+  destination_port = lookup(var.networkmonitor_probe[count.index], "destination_port")
+  monitor_name     = try(element(aws_networkmonitor_monitor.this.*.monitor_name, lookup(var.networkmonitor_probe[count.index], "monitor_id")))
+  protocol         = lookup(var.networkmonitor_probe[count.index], "protocol")
+  source_arn       = lookup(var.networkmonitor_probe[count.index], "source_arn") == null ? var.networkmonitor_probe_source_arn : element(var.networkmonitor_probe_source_arn, lookup(var.networkmonitor_probe[count.index], "source_id"))
+  packet_size      = lookup(var.networkmonitor_probe[count.index], "packet_size")
+  tags = merge(
+    var.tags,
+    data.aws_default_tags.this.tags,
+    lookup(var.networkmonitor_probe[count.index], "tags")
+  )
+}
+
 ## Observability Access Manager ##
+
+resource "aws_oam_link" "this" {
+  count           = length(var.oam_sink) == 0 ? 0 : length(var.oam_link)
+  label_template  = lookup(var.oam_link[count.index], "label_template")
+  resource_types  = lookup(var.oam_link[count.index], "resource_types")
+  sink_identifier = try(element(aws_oam_sink.this.*.id, lookup(var.oam_link[count.index], "sink_id")))
+  tags = merge(
+    var.tags,
+    data.aws_default_tags.this.tags,
+    lookup(var.oam_link[count.index], "tags")
+  )
+
+  dynamic "link_configuration" {
+    for_each = lookup(var.oam_link[count.index], "link_configuration") == null ? [] : ["link_configuration"]
+    content {
+      dynamic "log_group_configuration" {
+        for_each = lookup(link_configuration.value, "log_group_configuration") == null ? [] : ["log_group_configuration"]
+        content {
+          filter = lookup(log_group_configuration.value, "filter")
+        }
+      }
+
+      dynamic "metric_configuration" {
+        for_each = lookup(link_configuration.value, "metric_configuration") == null ? [] : ["metric_configuration"]
+        content {
+          filter = lookup(metric_configuration.value, "filter")
+        }
+      }
+    }
+  }
+}
+
+resource "aws_oam_sink" "this" {
+  count = length(var.oam_sink)
+  name  = lookup(var.oam_sink[count.index], "name")
+  tags = merge(
+    var.tags,
+    data.aws_default_tags.this.tags,
+    lookup(var.oam_sink[count.index], "tags")
+  )
+}
+
+resource "aws_oam_sink_policy" "this" {
+  count           = length(var.oam_sink) == 0 ? 0 : length(var.oam_sink_policy)
+  sink_identifier = try(element(aws_oam_sink.this.*.id, lookup(var.oam_sink_policy[count.index], "sink_id")))
+  policy          = jsonencode(lookup(var.oam_sink_policy[count.index], "policy"))
+}
 
 ## RUM ##
 
@@ -395,12 +478,59 @@ resource "aws_rum_metrics_destination" "this" {
 ## Synthetics ##
 
 resource "aws_synthetics_canary" "this" {
-  count                = length(var.synthetics_canary)
-  artifact_s3_location = lookup(var.synthetics_canary[count.index], "artifact_s3_location")
-  execution_role_arn   = lookup(var.synthetics_canary[count.index], "execution_role_arn")
-  handler              = lookup(var.synthetics_canary[count.index], "handler")
-  name                 = lookup(var.synthetics_canary[count.index], "name")
-  runtime_version      = lookup(var.synthetics_canary[count.index], "runtime_version")
+  count                    = length(var.synthetics_canary)
+  artifact_s3_location     = lookup(var.synthetics_canary[count.index], "artifact_s3_location")
+  execution_role_arn       = lookup(var.synthetics_canary[count.index], "execution_role_arn")
+  handler                  = lookup(var.synthetics_canary[count.index], "handler")
+  name                     = lookup(var.synthetics_canary[count.index], "name")
+  runtime_version          = lookup(var.synthetics_canary[count.index], "runtime_version")
+  delete_lambda            = lookup(var.synthetics_canary[count.index], "delete_lambda")
+  s3_bucket                = ""
+  s3_key                   = lookup(var.synthetics_canary[count.index], "s3_key")
+  s3_version               = lookup(var.synthetics_canary[count.index], "s3_version")
+  start_canary             = lookup(var.synthetics_canary[count.index], "start_canary")
+  success_retention_period = lookup(var.synthetics_canary[count.index], "success_retention_period")
+  tags                     = {}
+  zip_file                 = lookup(var.synthetics_canary[count.index], "zip_file")
+
+  dynamic "schedule" {
+    for_each = lookup(var.synthetics_canary[count.index], "schedule")
+    content {
+      expression          = lookup(schedule.value, "expression")
+      duration_in_seconds = lookup(schedule.value, "duration_in_seconds")
+    }
+  }
+
+  dynamic "artifact_config" {
+    for_each = lookup(var.synthetics_canary[count.index], "artifact_config") == null ? [] : ["artifact_config"]
+    content {
+      dynamic "s3_encryption" {
+        for_each = lookup(artifact_config.value, "s3_encryption")
+        content {
+          encryption_mode = lookup(s3_encryption.value, "encryption_mode")
+          kms_key_arn     = lookup(s3_encryption.value, "kms_key_id") != null ? element(var.synthetics_canary_s3_encrpytion_kms_key_arn, lookup(s3_encryption.value, "kms_key_id")) : var.synthetics_canary_s3_encrpytion_kms_key_arn
+        }
+      }
+    }
+  }
+
+  dynamic "run_config" {
+    for_each = lookup(var.synthetics_canary[count.index], "run_config") == null ? [] : ["run_config"]
+    content {
+      timeout_in_seconds    = lookup(run_config.value, "timeout_in_seconds")
+      memory_in_mb          = lookup(run_config.value, "memory_in_mb")
+      active_tracing        = lookup(run_config.value, "active_tracing")
+      environment_variables = lookup(run_config.value, "environment_variables")
+    }
+  }
+
+  dynamic "vpc_config" {
+    for_each = lookup(var.synthetics_canary[count.index], "vpc_config") == null ? [] : ["vpc_config"]
+    content {
+      subnet_ids         = var.subnet_ids
+      security_group_ids = var.security_group_ids
+    }
+  }
 }
 
 ## Event ##

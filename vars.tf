@@ -3,6 +3,31 @@ variable "tags" {
   default = {}
 }
 
+variable "networkmonitor_probe_source_arn" {
+  type    = string
+  default = null
+}
+
+variable "synthetics_canary_s3_encrpytion_kms_key_arn" {
+  type    = string
+  default = null
+}
+
+variable "subnet_ids" {
+  type    = list(string)
+  default = []
+}
+
+variable "security_group_ids" {
+  type    = list(string)
+  default = []
+}
+
+variable "resource_group_name" {
+  type = string
+  default = null
+}
+
 variable "composite_alarm" {
   type = list(map(object({
     id                        = number
@@ -75,6 +100,27 @@ variable "metric_alarm" {
   default     = []
   description = <<EOF
 EOF
+
+  validation {
+    condition = length([
+      for a in var.metric_alarm : true if contains(["GreaterThanOrEqualToThreshold", "GreaterThanThreshold", "LessThanThreshold", "LessThanOrEqualToThreshold"], a.comparison_operator)
+    ]) == length(var.metric_alarm)
+    error_message = "Either of the following is supported: GreaterThanOrEqualToThreshold, GreaterThanThreshold, LessThanThreshold, LessThanOrEqualToThreshold. Additionally, the values LessThanLowerOrGreaterThanUpperThreshold, LessThanLowerThreshold, and GreaterThanUpperThreshold are used only for alarms based on anomaly detection models."
+  }
+
+  validation {
+    condition = length([
+      for b in var.metric_alarm : true if contains(["SampleCount", "Average", "Sum", "Minimum", "Maximum"], b.statistic)
+    ]) == length(var.metric_alarm)
+    error_message = "Either of the following is supported: SampleCount, Average, Sum, Minimum, Maximum."
+  }
+
+  validation {
+    condition = length([
+      for c in var.metric_alarm : true if contains(["missing", "ignore", "breaching", "notBreaching."], c.treat_missing_data)
+    ]) == length(var.metric_alarm)
+    error_message = "Either of the following is supported: missing, ignore, breaching and notBreaching."
+  }
 }
 
 variable "metric_stream" {
@@ -103,35 +149,18 @@ variable "metric_stream" {
   default     = []
   description = <<EOF
 EOF
-}
 
-variable "resourcegroups_group" {
-  type = list(map(object({
-    id          = number
-    name        = string
-    description = optional(string)
-    tags        = optional(map(string))
-    configuration = optional(list(object({
-      type = string
-      parameters = optional(list(object({
-        name   = string
-        values = set(string)
-      })), [])
-    })), [])
-    resource_query = optional(list(object({
-      query = string
-      type  = optional(string)
-    })), [])
-  })))
-  default     = []
-  description = <<EOF
-EOF
+  validation {
+    condition = length([
+      for a in var.metric_stream : true if contains(["json", "opentelemetry0.7", "opentelemetry1.0"], a.output_format)
+    ]) == length(var.metric_stream)
+    error_message = "Possible values are json, opentelemetry0.7, and opentelemetry1.0."
+  }
 }
 
 variable "applicationinsights" {
   type = list(map(object({
     id                     = number
-    resource_group_id      = number
     auto_config_enabled    = optional(bool)
     auto_create            = optional(bool)
     cwe_monitor_enabled    = optional(bool)
@@ -204,6 +233,25 @@ variable "evidently_segment" {
 EOF
 }
 
+variable "log_account_policy" {
+  type = list(object({
+    id                 = number
+    policy_document    = string
+    policy_type        = string
+    policy_name        = string
+    scope              = optional(string)
+    selection_criteria = optional(string)
+  }))
+  default = []
+
+  validation {
+    condition = length([
+      for a in var.log_account_policy : true if contains(["DATA_PROTECTION_POLICY", "SUBSCRIPTION_FILTER_POLICY"], a.policy_type)
+    ]) == length(var.log_account_policy)
+    error_message = " Either DATA_PROTECTION_POLICY or SUBSCRIPTION_FILTER_POLICY. You can have one account policy per type in an account."
+  }
+}
+
 variable "log_data_protection_policy" {
   type = list(map(object({
     id              = number
@@ -245,10 +293,16 @@ variable "log_group" {
     retention_in_days = optional(number)
     kms_key_id        = optional(string)
     tags              = optional(map(string))
+    log_group_class   = optional(string)
   })))
-  default     = []
-  description = <<EOF
-  EOF
+  default = []
+
+  validation {
+    condition = length([
+      for a in var.log_group : true if contains(["STANDARD", "INFREQUENT_ACCESS"], a.log_group_class)
+    ]) == length(var.log_group)
+    error_message = "Either DATA_PROTECTION_POLICY or SUBSCRIPTION_FILTER_POLICY. You can have one account policy per type in an account."
+  }
 }
 
 variable "log_metric_filter" {
@@ -351,13 +405,51 @@ variable "rum_metrics_destination" {
     iam_role_arn    = optional(string)
   })))
   default     = []
-  description = <<EOF
-  EOF
+
+  validation {
+    condition = length([
+      for a in var.rum_metrics_destination : true if contains(["Cloudwatch", "Evidently"], a.destination)
+    ]) == length(var.log_group)
+    error_message = "Valid values are CloudWatch and Evidently. If you specify Evidently, you must also specify the ARN of the CloudWatchEvidently experiment that is to be the destination and an IAM role that has permission to write to the experiment."
+  }
 }
 
 variable "synthetics_canary" {
   type = list(map(object({
-    id = number
+    id                       = number
+    artifact_s3_location     = string
+    execution_role_arn       = any
+    handler                  = string
+    name                     = string
+    runtime_version          = string
+    delete_lambda            = optional(bool)
+    s3_bucket                = optional(any)
+    s3_key                   = optional(string)
+    s3_version               = optional(string)
+    start_canary             = optional(bool)
+    success_retention_period = optional(number)
+    tags                     = optional(map(string))
+    zip_file                 = optional(string)
+    schedule = list(object({
+      expression          = string
+      duration_in_seconds = optional(number)
+    }))
+    artifact_config = optional(list(object({
+      s3_encryption = optional(list(object({
+        encryption_mode = optional(string)
+        kms_key_arn     = optional(any)
+      })))
+    })))
+    run_config = optional(list(object({
+      timeout_in_seconds    = optional(number)
+      memory_in_mb          = optional(number)
+      active_tracing        = optional(bool)
+      environment_variables = optional(map(string))
+    })))
+    vpc_config = optional(list(object({
+      subnet_ids         = optional(set(any))
+      security_group_ids = optional(set(any))
+    })))
   })))
   default     = []
   description = <<EOF
@@ -579,6 +671,74 @@ variable "internetmonitor" {
       performance_score_threshold  = optional(number)
     })))
     internet_measurements_log_delivery = optional(list(object({})))
+  }))
+  default = []
+
+  validation {
+    condition = length([
+      for a in var.internetmonitor : true if contains(["ACTIVE", "INACTIVE"], a.status)
+    ]) == length(var.metric_stream)
+    error_message = "Possible values are ACTIVE and INACTIVE."
+  }
+}
+
+variable "networkmonitor_monitor" {
+  type = list(object({
+    id                 = number
+    monitor_name       = string
+    aggregation_period = optional(number)
+    tags               = optional(map(string))
+  }))
+  default = []
+}
+
+variable "networkmonitor_probe" {
+  type = list(object({
+    id               = number
+    destination      = string
+    destination_port = number
+    monitor_id       = any
+    protocol         = string
+    source_id        = any
+    packet_size      = number
+    tags             = optional(map(string))
+  }))
+  default = []
+}
+
+variable "oam_link" {
+  type = list(object({
+    id             = number
+    label_template = string
+    resource_types = list(string)
+    sink_id        = any
+    tags           = optional(map(string))
+    link_configuration = optional(list(object({
+      log_group_configuration = optional(list(object({
+        filter = optional(string)
+      })))
+      metric_configuration = optional(list(object({
+        filter = optional(string)
+      })))
+    })))
+  }))
+  default = []
+}
+
+variable "oam_sink" {
+  type = list(object({
+    id   = number
+    name = string
+    tags = optional(map(string))
+  }))
+  default = []
+}
+
+variable "oam_sink_policy" {
+  type = list(object({
+    id      = number
+    sink_id = any
+    policy  = string
   }))
   default = []
 }
