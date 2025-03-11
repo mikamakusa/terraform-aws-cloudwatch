@@ -155,7 +155,7 @@ resource "aws_resourcegroups_group" "this" {
 
 resource "aws_applicationinsights_application" "this" {
   count                  = length(var.applicationinsights)
-  resource_group_name    = var.resource_group_name
+  resource_group_name    = element(aws_resourcegroups_group.this.*.name, lookup(var.applicationinsights[count.index], "resource_group_id"))
   auto_config_enabled    = lookup(var.applicationinsights[count.index], "auto_config_enabled")
   auto_create            = lookup(var.applicationinsights[count.index], "auto_create")
   cwe_monitor_enabled    = lookup(var.applicationinsights[count.index], "cwe_monitor_enabled")

@@ -23,11 +23,6 @@ variable "security_group_ids" {
   default = []
 }
 
-variable "resource_group_name" {
-  type = string
-  default = null
-}
-
 variable "composite_alarm" {
   type = list(map(object({
     id                        = number
@@ -100,27 +95,6 @@ variable "metric_alarm" {
   default     = []
   description = <<EOF
 EOF
-
-  validation {
-    condition = length([
-      for a in var.metric_alarm : true if contains(["GreaterThanOrEqualToThreshold", "GreaterThanThreshold", "LessThanThreshold", "LessThanOrEqualToThreshold"], a.comparison_operator)
-    ]) == length(var.metric_alarm)
-    error_message = "Either of the following is supported: GreaterThanOrEqualToThreshold, GreaterThanThreshold, LessThanThreshold, LessThanOrEqualToThreshold. Additionally, the values LessThanLowerOrGreaterThanUpperThreshold, LessThanLowerThreshold, and GreaterThanUpperThreshold are used only for alarms based on anomaly detection models."
-  }
-
-  validation {
-    condition = length([
-      for b in var.metric_alarm : true if contains(["SampleCount", "Average", "Sum", "Minimum", "Maximum"], b.statistic)
-    ]) == length(var.metric_alarm)
-    error_message = "Either of the following is supported: SampleCount, Average, Sum, Minimum, Maximum."
-  }
-
-  validation {
-    condition = length([
-      for c in var.metric_alarm : true if contains(["missing", "ignore", "breaching", "notBreaching."], c.treat_missing_data)
-    ]) == length(var.metric_alarm)
-    error_message = "Either of the following is supported: missing, ignore, breaching and notBreaching."
-  }
 }
 
 variable "metric_stream" {
@@ -149,18 +123,12 @@ variable "metric_stream" {
   default     = []
   description = <<EOF
 EOF
-
-  validation {
-    condition = length([
-      for a in var.metric_stream : true if contains(["json", "opentelemetry0.7", "opentelemetry1.0"], a.output_format)
-    ]) == length(var.metric_stream)
-    error_message = "Possible values are json, opentelemetry0.7, and opentelemetry1.0."
-  }
 }
 
 variable "applicationinsights" {
   type = list(map(object({
     id                     = number
+    resource_group_id = any
     auto_config_enabled    = optional(bool)
     auto_create            = optional(bool)
     cwe_monitor_enabled    = optional(bool)
@@ -296,13 +264,6 @@ variable "log_group" {
     log_group_class   = optional(string)
   })))
   default = []
-
-  validation {
-    condition = length([
-      for a in var.log_group : true if contains(["STANDARD", "INFREQUENT_ACCESS"], a.log_group_class)
-    ]) == length(var.log_group)
-    error_message = "Either DATA_PROTECTION_POLICY or SUBSCRIPTION_FILTER_POLICY. You can have one account policy per type in an account."
-  }
 }
 
 variable "log_metric_filter" {
@@ -405,13 +366,6 @@ variable "rum_metrics_destination" {
     iam_role_arn    = optional(string)
   })))
   default     = []
-
-  validation {
-    condition = length([
-      for a in var.rum_metrics_destination : true if contains(["Cloudwatch", "Evidently"], a.destination)
-    ]) == length(var.log_group)
-    error_message = "Valid values are CloudWatch and Evidently. If you specify Evidently, you must also specify the ARN of the CloudWatchEvidently experiment that is to be the destination and an IAM role that has permission to write to the experiment."
-  }
 }
 
 variable "synthetics_canary" {
@@ -739,6 +693,27 @@ variable "oam_sink_policy" {
     id      = number
     sink_id = any
     policy  = string
+  }))
+  default = []
+}
+
+variable "resourcegroups_group" {
+  type = list(object({
+    id = any
+    name = string
+    description = optional(string)
+    tags = optional(map(string))
+    configuration = optional(list(object({
+      type = string
+      parameters = optional(list(object({
+        name = string
+        values = optional(list(string))
+      })))
+    })))
+    resource_query = list(object({
+      query = string
+      type = string
+    }))
   }))
   default = []
 }
